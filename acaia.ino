@@ -1,7 +1,7 @@
 #include <bluefruit.h>
 
-BLEClientService        ble_svc(0x1820);
-BLEClientCharacteristic ble_chr(0x2a80);
+BLEClientService        ble_svc = BLEClientService(0x1820);
+BLEClientCharacteristic ble_chr = BLEClientCharacteristic(0x2a80);
 
 uint8_t idPacket[] {0xef, 0xdd, 0x0b, 0x30, 0x31, 0x32, 0x33, 0x34, 0x35, 0x36, 0x37, 0x38, 0x39, 0x30, 0x31, 0x32, 0x33, 0x34, 0x9a, 0x6d};
 uint8_t startWeight[] {0xef, 0xdd, 0x0c, 0x09, 0x00, 0x01, 0x01, 0x02, 0x02, 0x05, 0x03, 0x04, 0x15, 0x06};
@@ -30,6 +30,8 @@ void setup() {
 	Bluefruit.Scanner.useActiveScan(true);
 	Bluefruit.Scanner.start(0);
 
+	ble_svc.begin();
+
 	ble_chr.setNotifyCallback(scale_notify_callback);
 	ble_chr.begin();
 
@@ -53,26 +55,35 @@ void disconnect_callback(uint16_t conn_handle, uint8_t reason) {
 void connect_callback(uint16_t conn_handle) {
 	Serial.println("--- connect_callback");
 
-/*
-	// If scale is not found, disconnect and return
+	Serial.println("--- Doing service discovery...");
 	if ( !ble_svc.discover(conn_handle) ) {
-		Serial.println("XXX Not found");
+		Serial.println("XXX Service discovery failed");
 		Bluefruit.disconnect(conn_handle);
 		return;
 	}
-*/
 
-	Serial.println("--- Found lunar, discovering scale...");
+	Serial.println("--- Doing characteristic discovery...");
+	if (!ble_chr.discover()) {
+		Serial.println("XXX Characteristic discovery failed");
+		Bluefruit.disconnect(conn_handle);
+		return;
+	}
 
-	ble_chr.discover();
-	ble_chr.write(idPacket, 20);
-	ble_chr.write(startWeight, 14);
-
+	Serial.println("Enabling notify...");
 	if ( ble_chr.enableNotify() ) {
 		Serial.println("--- Ready to receive scale measurement values");
 	} else {
 		Serial.println("XXX Couldn't enable notify for scale measurements values");
 	}
+	delay(700);
+
+	Serial.println("Writing ID packet...");
+	ble_chr.write(idPacket, 20);
+	delay(700);
+
+	Serial.println("Writing startWeight packet...");
+	ble_chr.write(startWeight, 14);
+	delay(700);
 
 }
 
