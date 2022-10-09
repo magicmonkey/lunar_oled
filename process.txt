@@ -2,3 +2,8 @@ Connect - to something with the service 0x1820
 Subscribe - to characteristic 0x2a80
 Write ID - to characteristic 0x2a80
 Write startWeight - to characteristic 0x2a80
+
+arduino-cli compile --fqbn adafruit:nrf52:feather52840 .
+arduino-cli upload --fqbn adafruit:nrf52:feather52840 -p /dev/ttyACM0 .
+arduino-cli monitor -p /dev/ttyACM0
+
