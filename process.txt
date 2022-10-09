@@ -1,0 +1,4 @@
+Connect - to something with the service 0x1820
+Subscribe - to characteristic 0x2a80
+Write ID - to characteristic 0x2a80
+Write startWeight - to characteristic 0x2a80
