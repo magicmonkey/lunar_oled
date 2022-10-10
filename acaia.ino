@@ -24,7 +24,7 @@ void setup() {
 	Bluefruit.Central.setConnectCallback(connect_callback);
 
 	Bluefruit.Scanner.setRxCallback(scan_callback);
-	Bluefruit.Scanner.restartOnDisconnect(false);
+	Bluefruit.Scanner.restartOnDisconnect(true);
 	Bluefruit.Scanner.setInterval(160, 80); // in unit of 0.625 ms
 	Bluefruit.Scanner.filterUuid(ble_svc.uuid);
 	Bluefruit.Scanner.useActiveScan(true);
@@ -33,7 +33,7 @@ void setup() {
 	ble_svc.begin();
 
 	ble_chr.setNotifyCallback(scale_notify_callback);
-	ble_chr.begin();
+	ble_chr.begin(&ble_svc);
 
 	Serial.println("--- Setup done");
 }
@@ -48,12 +48,14 @@ void scan_callback(ble_gap_evt_adv_report_t* report) {
 void disconnect_callback(uint16_t conn_handle, uint8_t reason) {
 	(void) conn_handle;
 	(void) reason;
-	Serial.print("XXX Disconnected, reason = 0x");
+	Serial.printf("XXX Disconnected (%d), reason = 0x", conn_handle);
 	Serial.println(reason, HEX);
 }
 
 void connect_callback(uint16_t conn_handle) {
-	Serial.println("--- connect_callback");
+	Serial.printf("--- connect_callback (%d)\n", conn_handle);
+
+	Serial.println("--- Requesting pairing...");
 
 	Serial.println("--- Doing service discovery...");
 	if ( !ble_svc.discover(conn_handle) ) {
