@@ -7,3 +7,5 @@ arduino-cli compile --fqbn adafruit:nrf52:feather52840 .
 arduino-cli upload --fqbn adafruit:nrf52:feather52840 -p /dev/ttyACM0 .
 arduino-cli monitor -p /dev/ttyACM0
 
+Wireshark filter for ATT packets : btl2cap.cid == 0x0004
+
