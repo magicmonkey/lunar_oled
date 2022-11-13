@@ -24,6 +24,8 @@ uint8_t currentSecs;
 bool timerRunning = false;
 bool connected = false;
 
+float runningAvg;
+
 void setup() {
 	Serial.begin(115200);
 	//while ( !Serial ) delay(10);
@@ -142,65 +144,78 @@ void scale_notify_callback(BLEClientCharacteristic* chr, uint8_t* data, uint16_t
 	*/
 }
 
-void loop() {
+void maybeHeartbeat() {
 	static unsigned long timeSinceLastHeartbeat = millis();
-	
+	if (millis() - timeSinceLastHeartbeat > 1000) {
+		heartbeat();
+		timeSinceLastHeartbeat = millis();
+	}
+}
+
+void processWeightReading() {
+	weightDeltas[10] = weightDeltas[9];
+	weightDeltas[9]  = weightDeltas[8];
+	weightDeltas[8]  = weightDeltas[7];
+	weightDeltas[7]  = weightDeltas[6];
+	weightDeltas[6]  = weightDeltas[5];
+	weightDeltas[5]  = weightDeltas[4];
+	weightDeltas[4]  = weightDeltas[3];
+	weightDeltas[3]  = weightDeltas[2];
+	weightDeltas[2]  = weightDeltas[1];
+	weightDeltas[1]  = weightDeltas[0];
+	weightDeltas[0]  = 10.0 * ((float)((int32_t)currentWeight - (int32_t)prevWeight) / (float)(currTime - prevTime)); // 10 because this is centi-grams divided by milli-seconds, so get it back to grams/sec
+
+	prevWeight = currentWeight;
+	prevTime = currTime;
+
+	runningAvg = 0.0;
+	uint8_t numSamples = 5;
+
+	for (int i=0; i<numSamples; i++) {
+		runningAvg += weightDeltas[i];
+	}
+	runningAvg /= (float)numSamples;
+}
+
+void updateDisplay() {
 	display.fillScreen(0);
 
+	// Current weight
+	display.setTextSize(1);
+	display.setCursor(0, 24);
+	display.printf("%2.1f", (float)currentWeight/100.0);
+
+	// Rate of weight change
+	//float rate = (float)((int32_t)weightSamples[0] - (int32_t)weightSamples[5])/100.0;
+	display.setTextSize(2);
+	display.setCursor(0, 0);
+	display.printf("%2.1f", runningAvg);
+
+	// Timer
+	display.setTextSize(1);
+	display.setCursor(64, 24);
+	display.printf("%d:%02d", currentMins, currentSecs);
+
+	display.display();
+}
+
+void loop() {
+	
 	if (connected) {
-		if (millis() - timeSinceLastHeartbeat > 1000) {
-			heartbeat();
-			timeSinceLastHeartbeat = millis();
+
+		maybeHeartbeat();
+		if (currTime == prevTime) {
+			delay(100);
+			return;
 		}
 
-		weightDeltas[10] = weightDeltas[9];
-		weightDeltas[9]  = weightDeltas[8];
-		weightDeltas[8]  = weightDeltas[7];
-		weightDeltas[7]  = weightDeltas[6];
-		weightDeltas[6]  = weightDeltas[5];
-		weightDeltas[5]  = weightDeltas[4];
-		weightDeltas[4]  = weightDeltas[3];
-		weightDeltas[3]  = weightDeltas[2];
-		weightDeltas[2]  = weightDeltas[1];
-		weightDeltas[1]  = weightDeltas[0];
-		weightDeltas[0]  = (float)((int32_t)currentWeight - (int32_t)prevWeight) / (float)(currTime - prevTime);
-
-		prevWeight = currentWeight;
-		prevTime = currTime;
-
-		float runningAvg = 0.0;
-		uint8_t numSamples = 5;
-
-		for (int i=0; i<numSamples; i++) {
-			runningAvg += weightDeltas[i];
-		}
-		runningAvg /= (float)numSamples;
-
+		processWeightReading();
 		Serial.printf("SAMPLE %d %d %2.1f %2.1f\n", currentWeight, currTime, runningAvg, weightDeltas[0]);
-
-
-
-
-		// Current weight
-		display.setTextSize(1);
-		display.setCursor(0, 24);
-		display.printf("%2.1f", (float)currentWeight/100.0);
-
-		// Rate of weight change
-		//float rate = (float)((int32_t)weightSamples[0] - (int32_t)weightSamples[5])/100.0;
-		display.setTextSize(2);
-		display.setCursor(0, 0);
-		display.printf("%2.1f", runningAvg);
-
-		// Timer
-		display.setTextSize(1);
-		display.setCursor(64, 24);
-		display.printf("%d:%02d", currentMins, currentSecs);
-
-		display.display();
+		updateDisplay();
 
 		delay(200);
 	} else {
+		display.fillScreen(0);
 		display.display();
 		delay(1000);
 	}
