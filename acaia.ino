@@ -15,7 +15,10 @@ uint8_t startWeight[] {0xef, 0xdd, 0x0c, 0x09, 0x00, 0x01, 0x01, 0x02, 0x02, 0x0
 
 uint8_t heartbeatPacket[] {0xef, 0xdd, 0x00, 0x02, 0x00, 0x02, 0x00};
 
-uint32_t currentWeight;
+uint32_t currentWeight, prevWeight;
+unsigned long currTime, prevTime;
+float weightDeltas[10]    = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+
 uint8_t currentMins;
 uint8_t currentSecs;
 bool timerRunning = false;
@@ -92,59 +95,6 @@ void heartbeat() {
 	ble_chr.write(heartbeatPacket, 7);
 }
 
-uint32_t weightSamples[10] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
-
-void loop() {
-	unsigned long time = millis();
-	static unsigned long timeSinceLastHeartbeat = millis();
-	
-	display.fillScreen(0);
-
-	if (connected) {
-		if (time - timeSinceLastHeartbeat > 1000) {
-			heartbeat();
-			timeSinceLastHeartbeat = time;
-		}
-
-		weightSamples[10] = weightSamples[9];
-		weightSamples[9] = weightSamples[8];
-		weightSamples[8] = weightSamples[7];
-		weightSamples[7] = weightSamples[6];
-		weightSamples[6] = weightSamples[5];
-		weightSamples[5] = weightSamples[4];
-		weightSamples[4] = weightSamples[3];
-		weightSamples[3] = weightSamples[2];
-		weightSamples[2] = weightSamples[1];
-		weightSamples[1] = weightSamples[0];
-		weightSamples[0] = currentWeight;
-
-		//Serial.printf("%2.1f", (float)currentWeight/100.0);
-
-
-		// Current weight
-		display.setTextSize(1);
-		display.setCursor(0, 24);
-		display.printf("%2.1f", (float)currentWeight/100.0);
-
-		// Rate of weight change
-		display.setTextSize(2);
-		display.setCursor(0, 0);
-		display.printf("%2.1f", (float)((int32_t)weightSamples[0] - (int32_t)weightSamples[5])/100.0);
-
-		// Timer
-		display.setTextSize(1);
-		display.setCursor(64, 24);
-		display.printf("%d:%02d", currentMins, currentSecs);
-
-		display.display();
-
-		delay(100);
-	} else {
-		display.display();
-		delay(1000);
-	}
-}
-
 void scale_notify_callback(BLEClientCharacteristic* chr, uint8_t* data, uint16_t len) {
 	//Serial.println("--- Scale notify");
 	//Serial.printf("%d\n", len);
@@ -162,6 +112,7 @@ void scale_notify_callback(BLEClientCharacteristic* chr, uint8_t* data, uint16_t
 
 	if (data[0] == 8 && data[1] == 5) {
 		currentWeight = ((uint32_t)data[2]) | ((uint32_t)data[3])<<8 | ((uint32_t)data[4])<<16 | ((uint32_t)data[5])<<24;
+		currTime = millis();
 		//Serial.printf("WEIGHT %2.1f\n", (float)weight/100.0);
 	}
 
@@ -189,5 +140,69 @@ void scale_notify_callback(BLEClientCharacteristic* chr, uint8_t* data, uint16_t
 		}
 	}
 	*/
+}
+
+void loop() {
+	static unsigned long timeSinceLastHeartbeat = millis();
+	
+	display.fillScreen(0);
+
+	if (connected) {
+		if (millis() - timeSinceLastHeartbeat > 1000) {
+			heartbeat();
+			timeSinceLastHeartbeat = millis();
+		}
+
+		weightDeltas[10] = weightDeltas[9];
+		weightDeltas[9]  = weightDeltas[8];
+		weightDeltas[8]  = weightDeltas[7];
+		weightDeltas[7]  = weightDeltas[6];
+		weightDeltas[6]  = weightDeltas[5];
+		weightDeltas[5]  = weightDeltas[4];
+		weightDeltas[4]  = weightDeltas[3];
+		weightDeltas[3]  = weightDeltas[2];
+		weightDeltas[2]  = weightDeltas[1];
+		weightDeltas[1]  = weightDeltas[0];
+		weightDeltas[0]  = (float)((int32_t)currentWeight - (int32_t)prevWeight) / (float)(currTime - prevTime);
+
+		prevWeight = currentWeight;
+		prevTime = currTime;
+
+		float runningAvg = 0.0;
+		uint8_t numSamples = 5;
+
+		for (int i=0; i<numSamples; i++) {
+			runningAvg += weightDeltas[i];
+		}
+		runningAvg /= (float)numSamples;
+
+		Serial.printf("SAMPLE %d %d %2.1f %2.1f\n", currentWeight, currTime, runningAvg, weightDeltas[0]);
+
+
+
+
+		// Current weight
+		display.setTextSize(1);
+		display.setCursor(0, 24);
+		display.printf("%2.1f", (float)currentWeight/100.0);
+
+		// Rate of weight change
+		//float rate = (float)((int32_t)weightSamples[0] - (int32_t)weightSamples[5])/100.0;
+		display.setTextSize(2);
+		display.setCursor(0, 0);
+		display.printf("%2.1f", runningAvg);
+
+		// Timer
+		display.setTextSize(1);
+		display.setCursor(64, 24);
+		display.printf("%d:%02d", currentMins, currentSecs);
+
+		display.display();
+
+		delay(200);
+	} else {
+		display.display();
+		delay(1000);
+	}
 }
 
