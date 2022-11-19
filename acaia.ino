@@ -31,6 +31,11 @@ bool scaleActive = false;
 
 float runningAvg;
 
+// Buttons on the OLED featherwing
+#define BUTTON_A  9
+#define BUTTON_B  6
+#define BUTTON_C  5
+
 // For the flash chip datalogger
 #include <SPI.h>
 #include <SdFat.h>
@@ -43,30 +48,61 @@ File32 dataFile;
 //File32 seqFile;        // File to store the sequence number in
 //uint32_t sequence = 0; // Sequence number for filenames
 
-void setup() {
-	Serial.begin(115200);
-	//while ( !Serial ) delay(10);
+void initFlash() {
+	useFlash = true;
+	// Initialise flash storage
+	if (!flash.begin()) {
+		useFlash = false;
+		return;
+	}
+	if (!fatfs.begin(&flash)) {
+		useFlash = false;
+		return;
+	}
+}
 
+void initDisplay() {
 	// Initialise display
 	display.begin(SSD1306_SWITCHCAPVCC, 0x3C);
 	display.setTextColor(WHITE);
 	display.setTextSize(2);
 	display.fillScreen(0);
 	display.display();
+}
 
-	// Initialise flash storage
-	if (!flash.begin()) {
-		useFlash = false;
-		goto afterFlash;
-	}
-	if (!fatfs.begin(&flash)) {
-		useFlash = false;
-		goto afterFlash;
-	}
-	//seqFile = fatfs.open("sequence.txt", FILE_WRITE);
-	dataFile = fatfs.open("readings.txt", FILE_WRITE);
+void initButtons() {
+	// Initialise buttons
+	pinMode(BUTTON_A, INPUT_PULLUP);
+	pinMode(BUTTON_B, INPUT_PULLUP);
+	pinMode(BUTTON_C, INPUT_PULLUP);
+}
 
-	afterFlash:
+void setup() {
+
+	String line;
+
+	initButtons();
+	initFlash();
+
+	Serial.begin(115200);
+
+	// If button B is held down on boot, then dump the datafile before continuing
+	if(useFlash && !digitalRead(BUTTON_B)) {
+		while ( !Serial ) delay(10);
+		dataFile = fatfs.open("readings.txt", FILE_READ);
+		while (dataFile.available()) {
+			line = dataFile.readStringUntil('\n');
+			Serial.println(line);
+		}
+		dataFile.close();
+	}
+
+	initDisplay();
+
+	if (useFlash) {
+		//seqFile = fatfs.open("sequence.txt", FILE_WRITE);
+		dataFile = fatfs.open("readings.txt", FILE_WRITE);
+	}
 
 	Bluefruit.begin(0, 1);
 
@@ -280,6 +316,12 @@ void updateDisplay() {
 
 void loop() {
 	
+	/*
+	if(!digitalRead(BUTTON_A)) Serial.print("A");
+	if(!digitalRead(BUTTON_B)) Serial.print("B");
+	if(!digitalRead(BUTTON_C)) Serial.print("C");
+	*/
+
 	if (connected) {
 
 		//maybeHeartbeat(); // This requests a status update from the scale
