@@ -1,3 +1,6 @@
+// Flash chip must be formatted
+// Run this: https://github.com/adafruit/Adafruit_SPIFlash/tree/master/examples/SdFat_format
+
 #include <bluefruit.h>
 
 #include <SPI.h>
@@ -11,7 +14,7 @@ BLEClientService        ble_svc = BLEClientService(0x1820);
 BLEClientCharacteristic ble_chr = BLEClientCharacteristic(0x2a80);
 
 uint8_t idPacket[] {0xef, 0xdd, 0x0b, 0x30, 0x31, 0x32, 0x33, 0x34, 0x35, 0x36, 0x37, 0x38, 0x39, 0x30, 0x31, 0x32, 0x33, 0x34, 0x9a, 0x6d};
-uint8_t startWeight[] {0xef, 0xdd, 0x0c, 0x09, 0x00, 0x01, 0x01, 0x02, 0x02, 0x05, 0x03, 0x04, 0x15, 0x06};
+uint8_t startNotifications[] {0xef, 0xdd, 0x0c, 0x09, 0x00, 0x01, 0x01, 0x02, 0x02, 0x05, 0x03, 0x04, 0x15, 0x06};
 
 uint8_t heartbeatPacket[] {0xef, 0xdd, 0x00, 0x02, 0x00, 0x02, 0x00};
 
@@ -28,16 +31,42 @@ bool scaleActive = false;
 
 float runningAvg;
 
+// For the flash chip datalogger
+#include <SPI.h>
+#include <SdFat.h>
+#include <Adafruit_SPIFlash.h>
+#include "flash_config.h"
+bool useFlash = true;
+Adafruit_SPIFlash flash(&flashTransport);
+FatVolume fatfs;
+File32 dataFile;
+//File32 seqFile;        // File to store the sequence number in
+//uint32_t sequence = 0; // Sequence number for filenames
+
 void setup() {
 	Serial.begin(115200);
 	//while ( !Serial ) delay(10);
 
+	// Initialise display
 	display.begin(SSD1306_SWITCHCAPVCC, 0x3C);
 	display.setTextColor(WHITE);
 	display.setTextSize(2);
-
 	display.fillScreen(0);
 	display.display();
+
+	// Initialise flash storage
+	if (!flash.begin()) {
+		useFlash = false;
+		goto afterFlash;
+	}
+	if (!fatfs.begin(&flash)) {
+		useFlash = false;
+		goto afterFlash;
+	}
+	//seqFile = fatfs.open("sequence.txt", FILE_WRITE);
+	dataFile = fatfs.open("readings.txt", FILE_WRITE);
+
+	afterFlash:
 
 	Bluefruit.begin(0, 1);
 
@@ -89,9 +118,13 @@ void connect_callback(uint16_t conn_handle) {
 	}
 	connected = true;
 
+	if (useFlash) {
+		dataFile.println("CONNECTION");
+	}
+
 	ble_chr.enableNotify();
 	ble_chr.write(idPacket, 20);
-	ble_chr.write(startWeight, 14);
+	ble_chr.write(startNotifications, 14);
 
 }
 
@@ -143,6 +176,9 @@ void scale_notify_callback(BLEClientCharacteristic* chr, uint8_t* data, uint16_t
 				case 8:
 					// Timer start
 					timerRunning = true;
+					if (useFlash) {
+						dataFile.println("TIMER_START");
+					}
 					break;
 				case 9:
 					// Timer reset
@@ -153,6 +189,10 @@ void scale_notify_callback(BLEClientCharacteristic* chr, uint8_t* data, uint16_t
 				case 10:
 					// Timer stop
 					timerRunning = false;
+					if (useFlash) {
+						dataFile.println("TIMER_STOP");
+						dataFile.sync();
+					}
 					break;
 
 				default:
@@ -168,11 +208,15 @@ void scale_notify_callback(BLEClientCharacteristic* chr, uint8_t* data, uint16_t
 			break;
 
 		case 11:
-			Serial.printf("HEARTBEAT ");
-			for (int i=0; i<len; i++) {
-				Serial.printf("%d ", (int)data[i]);
-			}
-			Serial.println("");
+			// Status request response
+			/*
+				Serial.printf("HEARTBEAT ");
+				for (int i=0; i<len; i++) {
+					Serial.printf("%d ", (int)data[i]);
+				}
+				Serial.println("");
+			*/
+			break;
 
 
 	}
@@ -238,7 +282,8 @@ void loop() {
 	
 	if (connected) {
 
-		maybeHeartbeat();
+		//maybeHeartbeat(); // This requests a status update from the scale
+
 		if (currTime == prevTime) {
 			delay(100);
 			return;
@@ -246,6 +291,9 @@ void loop() {
 
 		processWeightReading();
 		Serial.printf("SAMPLE %d %d %2.1f %2.1f %i %i %d %d\n", currentWeight, currTime, runningAvg, weightDeltas[0], scaleActive, timerRunning, currentMins, currentSecs);
+		if (useFlash && timerRunning) {
+			dataFile.printf("SAMPLE %d %d %2.1f %2.1f %i %i %d %d\n", currentWeight, currTime, runningAvg, weightDeltas[0], scaleActive, timerRunning, currentMins, currentSecs);
+		}
 
 		updateDisplay();
 
