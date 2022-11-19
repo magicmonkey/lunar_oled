@@ -24,6 +24,8 @@ uint8_t currentSecs;
 bool timerRunning = false;
 bool connected = false;
 
+bool scaleActive = false;
+
 float runningAvg;
 
 void setup() {
@@ -108,40 +110,73 @@ void scale_notify_callback(BLEClientCharacteristic* chr, uint8_t* data, uint16_t
                 fmt.Println("WEIGHT     ", float32(weight)/100)
                 */
 
-	if (len < 3) {
+	if (len < data[0]) {
+		// Something went wrong, likely the bluetooth packet was split across
+		// 2 payloads and this code doesn't handle that yet
 		return;
 	}
 
-	if (data[0] == 8 && data[1] == 5) {
-		currentWeight = ((uint32_t)data[2]) | ((uint32_t)data[3])<<8 | ((uint32_t)data[4])<<16 | ((uint32_t)data[5])<<24;
-		currTime = millis();
-		//Serial.printf("WEIGHT %2.1f\n", (float)weight/100.0);
+	switch(data[1]) {
+
+		case 5:
+
+			// Weight reading
+			currentWeight = ((uint32_t)data[2]) | ((uint32_t)data[3])<<8 | ((uint32_t)data[4])<<16 | ((uint32_t)data[5])<<24;
+			currTime = millis();
+
+			// Something on the scale?
+			scaleActive = (bool)data[7];
+
+			if (data[0] == 12) {
+				// Weight _and_ timer reading
+				currentMins = data[9];
+				currentSecs = data[10];
+			}
+
+			break;
+
+		case 8:
+			switch (data[2]) {
+				case 0:
+					// Tare
+					break;
+				case 8:
+					// Timer start
+					timerRunning = true;
+					break;
+				case 9:
+					// Timer reset
+					timerRunning = false;
+					currentMins = 0;
+					currentSecs = 0;
+					break;
+				case 10:
+					// Timer stop
+					timerRunning = false;
+					break;
+
+				default:
+					/*
+						for (int i=0; i<len; i++) {
+							Serial.printf("%d ", (int)data[i]);
+						}
+						Serial.println("");
+					*/
+					break;
+
+			}
+			break;
+
+		case 11:
+			Serial.printf("HEARTBEAT ");
+			for (int i=0; i<len; i++) {
+				Serial.printf("%d ", (int)data[i]);
+			}
+			Serial.println("");
+
+
 	}
 
-	// Timer start
-	if (data[0] == 10 && data[1] == 8 && data[1] == 8) {
-		timerRunning = true;
-	}
-	// Timer reset
-	if (data[0] == 14 && data[1] == 8 && data[1] == 9) {
-		currentMins = 0;
-		currentSecs = 0;
-	}
-	// Timer stop
-	if (data[0] == 14 && data[1] == 8 && data[1] == 10) {
-		timerRunning = false;
-	}
-	if (data[0] == 12 && data[1] == 5) {
-		currentMins = data[9];
-		currentSecs = data[10];
-	}
-/*
-	if (len == 10) {
-		for (int i=0; i<len; i++) {
-			Serial.printf(" - %d\n", (int)data[i]);
-		}
-	}
-	*/
 }
 
 void maybeHeartbeat() {
@@ -210,7 +245,8 @@ void loop() {
 		}
 
 		processWeightReading();
-		Serial.printf("SAMPLE %d %d %2.1f %2.1f\n", currentWeight, currTime, runningAvg, weightDeltas[0]);
+		Serial.printf("SAMPLE %d %d %2.1f %2.1f %i %i %d %d\n", currentWeight, currTime, runningAvg, weightDeltas[0], scaleActive, timerRunning, currentMins, currentSecs);
+
 		updateDisplay();
 
 		delay(200);
