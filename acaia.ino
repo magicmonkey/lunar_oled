@@ -31,6 +31,10 @@ bool scaleActive = false;
 
 float runningAvg;
 
+// For the NeoPixel
+#include <Adafruit_NeoPixel.h>
+Adafruit_NeoPixel pix(1, PIN_NEOPIXEL, NEO_GRB + NEO_KHZ800);
+
 // Buttons on the OLED featherwing
 #define BUTTON_A  9
 #define BUTTON_B  6
@@ -77,24 +81,47 @@ void initButtons() {
 	pinMode(BUTTON_C, INPUT_PULLUP);
 }
 
+void initNeopixel() {
+	pix.begin();
+	delay(10);
+	pix.setPixelColor(0, 0, 0, 0);
+	pix.show(); // Turn LED off
+}
+
+void dumpFile() {
+	String line;
+
+	pix.setPixelColor(0, 0, 0, 100);
+	pix.show();
+
+	while ( !Serial ) delay(10);
+
+	pix.setPixelColor(0, 100, 0, 0);
+	pix.show();
+
+	dataFile = fatfs.open("readings.txt", FILE_READ);
+	while (dataFile.available()) {
+		line = dataFile.readStringUntil('\n');
+		Serial.println(line);
+	}
+	dataFile.close();
+
+	pix.setPixelColor(0, 0, 0, 0);
+	pix.show();
+}
+
 void setup() {
 
-	String line;
+	Serial.begin(115200);
 
 	initButtons();
 	initFlash();
 
-	Serial.begin(115200);
+	initNeopixel();
 
 	// If button B is held down on boot, then dump the datafile before continuing
 	if(useFlash && !digitalRead(BUTTON_B)) {
-		while ( !Serial ) delay(10);
-		dataFile = fatfs.open("readings.txt", FILE_READ);
-		while (dataFile.available()) {
-			line = dataFile.readStringUntil('\n');
-			Serial.println(line);
-		}
-		dataFile.close();
+		dumpFile();
 	}
 
 	initDisplay();
@@ -213,6 +240,8 @@ void scale_notify_callback(BLEClientCharacteristic* chr, uint8_t* data, uint16_t
 					// Timer start
 					timerRunning = true;
 					if (useFlash) {
+						pix.setPixelColor(0, 0, 100, 0);
+						pix.show();
 						dataFile.println("TIMER_START");
 					}
 					break;
@@ -226,6 +255,8 @@ void scale_notify_callback(BLEClientCharacteristic* chr, uint8_t* data, uint16_t
 					// Timer stop
 					timerRunning = false;
 					if (useFlash) {
+						pix.setPixelColor(0, 0, 0, 0);
+						pix.show();
 						dataFile.println("TIMER_STOP");
 						dataFile.sync();
 					}
@@ -316,12 +347,6 @@ void updateDisplay() {
 
 void loop() {
 	
-	/*
-	if(!digitalRead(BUTTON_A)) Serial.print("A");
-	if(!digitalRead(BUTTON_B)) Serial.print("B");
-	if(!digitalRead(BUTTON_C)) Serial.print("C");
-	*/
-
 	if (connected) {
 
 		//maybeHeartbeat(); // This requests a status update from the scale
